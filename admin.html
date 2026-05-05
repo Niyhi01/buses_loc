@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0,
+        maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
+  <link rel="manifest" href="/bus-map/manifest.json" />
+  <meta name="theme-color" content="#1B3A6B" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Admin Panel — Smart Shuttle UNILORIN</title>
+
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Segoe UI',sans-serif; background:#F0F2F5; min-height:100vh; }
+
+    /* ── PIN SCREEN ── */
+    #pin-screen {
+      min-height:100vh;
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      background:#1B3A6B; padding:30px;
+    }
+    .pin-logo {
+      font-size:48px; margin-bottom:8px;
+    }
+    .pin-title {
+      color:white; font-size:22px; font-weight:bold;
+      margin-bottom:4px;
+    }
+    .pin-subtitle {
+      color:rgba(255,255,255,.6); font-size:13px;
+      margin-bottom:32px; text-align:center;
+    }
+    .pin-card {
+      background:white; border-radius:16px;
+      padding:24px; width:100%; max-width:320px;
+    }
+    .pin-label {
+      font-size:13px; color:#888; text-align:center;
+      margin-bottom:12px; font-weight:bold;
+      text-transform:uppercase; letter-spacing:.5px;
+    }
+    .pin-dots {
+      display:flex; justify-content:center;
+      gap:12px; margin-bottom:20px;
+    }
+    .pin-dot {
+      width:16px; height:16px; border-radius:50%;
+      border:2px solid #DDD; background:white;
+      transition:all .2s;
+    }
+    .pin-dot.filled { background:#1B3A6B; border-color:#1B3A6B; }
+    .pin-dot.error  { background:#F44336; border-color:#F44336; }
+
+    .pin-keypad {
+      display:grid; grid-template-columns:repeat(3,1fr);
+      gap:10px;
+    }
+    .pin-key {
+      aspect-ratio:1; border:none; border-radius:50%;
+      background:#F5F5F5; font-size:20px; font-weight:bold;
+      color:#333; cursor:pointer; transition:background .15s;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .pin-key:active { background:#E0E0E0; }
+    .pin-key.zero   { grid-column:2; }
+    .pin-key.del    { background:none; color:#888; font-size:16px; }
+    .pin-error-msg  {
+      color:#F44336; text-align:center;
+      font-size:13px; margin-top:12px; font-weight:bold;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background:#1B3A6B; color:white;
+      padding:14px 20px;
+      display:flex; align-items:center;
+      justify-content:space-between;
+      position:sticky; top:0; z-index:100;
+    }
+    .header h1  { font-size:16px; font-weight:bold; }
+    .logout-btn {
+      background:rgba(255,255,255,.15); border:none;
+      color:white; padding:6px 12px; border-radius:20px;
+      font-size:12px; cursor:pointer;
+    }
+
+    /* ── CONTENT ── */
+    .content { padding:16px; max-width:540px; margin:0 auto; }
+
+    /* ── CARDS ── */
+    .card {
+      background:white; border-radius:14px;
+      padding:18px; margin-bottom:14px;
+      box-shadow:0 2px 8px rgba(0,0,0,.07);
+    }
+    .card-title {
+      font-size:11px; color:#888;
+      text-transform:uppercase; letter-spacing:.6px;
+      margin-bottom:14px; font-weight:bold;
+    }
+
+    /* ── STATS ROW ── */
+    .stats-grid {
+      display:grid; grid-template-columns:repeat(2,1fr);
+      gap:10px; margin-bottom:14px;
+    }
+    .stat-card {
+      background:white; border-radius:12px;
+      padding:14px; text-align:center;
+      box-shadow:0 2px 8px rgba(0,0,0,.07);
+    }
+    .stat-number {
+      font-size:32px; font-weight:900; color:#1B3A6B;
+      line-height:1;
+    }
+    .stat-label {
+      font-size:11px; color:#888; margin-top:4px;
+      text-transform:uppercase; letter-spacing:.4px;
+    }
+
+    /* ── SPECIAL EVENT SECTION ── */
+    .event-toggle-row {
+      display:flex; align-items:center;
+      justify-content:space-between; margin-bottom:14px;
+    }
+    .event-toggle-label {
+      font-size:15px; font-weight:bold; color:#333;
+    }
+    .event-toggle-sub {
+      font-size:12px; color:#888; margin-top:2px;
+    }
+
+    /* Toggle switch */
+    .toggle-switch {
+      position:relative; width:52px; height:28px;
+      flex-shrink:0;
+    }
+    .toggle-switch input { opacity:0; width:0; height:0; }
+    .toggle-slider {
+      position:absolute; inset:0;
+      background:#DDD; border-radius:28px;
+      cursor:pointer; transition:background .3s;
+    }
+    .toggle-slider:before {
+      content:''; position:absolute;
+      width:22px; height:22px; border-radius:50%;
+      background:white; left:3px; top:3px;
+      transition:transform .3s;
+      box-shadow:0 1px 4px rgba(0,0,0,.2);
+    }
+    input:checked + .toggle-slider { background:#E65100; }
+    input:checked + .toggle-slider:before { transform:translateX(24px); }
+
+    /* Severity buttons */
+    .severity-row {
+      display:grid; grid-template-columns:repeat(3,1fr);
+      gap:8px; margin-bottom:14px;
+    }
+    .severity-btn {
+      padding:10px 6px; border:2px solid #E0E0E0;
+      border-radius:10px; background:white;
+      font-size:12px; font-weight:bold; color:#555;
+      cursor:pointer; text-align:center;
+      transition:all .2s;
+    }
+    .severity-btn.active-normal      { border-color:#4CAF50; background:#E8F5E9; color:#2E7D32; }
+    .severity-btn.active-exams       { border-color:#FF9800; background:#FFF3E0; color:#E65100; }
+    .severity-btn.active-convocation { border-color:#F44336; background:#FFEBEE; color:#C62828; }
+
+    /* Live PWT preview */
+    .pwt-preview {
+      background:#F5F5F5; border-radius:10px;
+      padding:12px 14px; display:flex;
+      align-items:center; justify-content:space-between;
+    }
+    .pwt-label { font-size:13px; color:#555; }
+    .pwt-value { font-size:16px; font-weight:bold; color:#1B3A6B; }
+
+    /* Save button */
+    .save-btn {
+      width:100%; padding:14px; border:none;
+      border-radius:12px; background:#1B3A6B;
+      color:white; font-size:16px; font-weight:bold;
+      cursor:pointer; transition:opacity .2s;
+      margin-top:4px;
+    }
+    .save-btn:active   { opacity:.8; }
+    .save-btn.saving   { opacity:.6; cursor:default; }
+    .save-success {
+      display:none; text-align:center;
+      color:#2E7D32; font-size:13px;
+      font-weight:bold; margin-top:8px;
+    }
+
+    /* ── BUS MANAGEMENT ── */
+    .bus-row {
+      display:flex; align-items:center;
+      justify-content:space-between;
+      padding:12px 0;
+      border-bottom:1px solid #F5F5F5;
+    }
+    .bus-row:last-child { border-bottom:none; }
+    .bus-row-left { flex:1; }
+    .bus-row-name { font-size:15px; font-weight:bold; color:#333; }
+    .bus-row-detail { font-size:12px; color:#888; margin-top:2px; }
+    .bus-row-right {
+      display:flex; gap:8px; align-items:center;
+    }
+    .status-pill {
+      padding:4px 10px; border-radius:20px;
+      font-size:11px; font-weight:bold; color:white;
+    }
+    .toggle-status-btn {
+      padding:6px 12px; border-radius:8px;
+      border:1.5px solid #1B3A6B; background:white;
+      color:#1B3A6B; font-size:12px; font-weight:bold;
+      cursor:pointer; transition:all .2s;
+    }
+    .toggle-status-btn:hover {
+      background:#1B3A6B; color:white;
+    }
+
+    /* ── RESERVATIONS STATS ── */
+    .res-row {
+      display:flex; justify-content:space-between;
+      align-items:center; padding:10px 0;
+      border-bottom:1px solid #F5F5F5;
+      font-size:14px;
+    }
+    .res-row:last-child { border-bottom:none; }
+    .res-label { color:#555; }
+    .res-value { font-weight:bold; color:#1B3A6B; }
+
+    /* ── LOADING ── */
+    #admin-loading {
+      text-align:center; padding:40px 20px; color:#888;
+    }
+
+    /* HIDDEN */
+    #admin-content { display:none; }
+    #pin-screen    { display:flex; }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════
+     PIN SCREEN
+════════════════════════════════════════════════════════ -->
+<div id="pin-screen">
+  <div class="pin-logo">🔐</div>
+  <div class="pin-title">Admin Panel</div>
+  <div class="pin-subtitle">Smart Shuttle UNILORIN<br>Enter your PIN to continue</div>
+
+  <div class="pin-card">
+    <div class="pin-label">Enter PIN</div>
+    <div class="pin-dots">
+      <div class="pin-dot" id="dot-0"></div>
+      <div class="pin-dot" id="dot-1"></div>
+      <div class="pin-dot" id="dot-2"></div>
+      <div class="pin-dot" id="dot-3"></div>
+    </div>
+
+    <div class="pin-keypad">
+      <button class="pin-key" onclick="pinKey('1')">1</button>
+      <button class="pin-key" onclick="pinKey('2')">2</button>
+      <button class="pin-key" onclick="pinKey('3')">3</button>
+      <button class="pin-key" onclick="pinKey('4')">4</button>
+      <button class="pin-key" onclick="pinKey('5')">5</button>
+      <button class="pin-key" onclick="pinKey('6')">6</button>
+      <button class="pin-key" onclick="pinKey('7')">7</button>
+      <button class="pin-key" onclick="pinKey('8')">8</button>
+      <button class="pin-key" onclick="pinKey('9')">9</button>
+      <button class="pin-key zero"  onclick="pinKey('0')">0</button>
+      <button class="pin-key del"   onclick="pinDelete()">⌫</button>
+    </div>
+    <div class="pin-error-msg" id="pin-error"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════
+     ADMIN CONTENT (shown after PIN)
+════════════════════════════════════════════════════════ -->
+<div id="admin-content">
+
+  <div class="header">
+    <h1>⚙️ Admin Panel</h1>
+    <button class="logout-btn" onclick="logout()">Lock</button>
+  </div>
+
+  <div class="content">
+
+    <div id="admin-loading">
+      <div style="font-size:32px;margin-bottom:10px;">⏳</div>
+      <p>Loading dashboard...</p>
+    </div>
+
+    <div id="dashboard" style="display:none;">
+
+      <!-- LIVE STATS -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number" id="stat-active-buses">—</div>
+          <div class="stat-label">Active Buses</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-total-seats">—</div>
+          <div class="stat-label">Seats Available</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-bookings">—</div>
+          <div class="stat-label">Active Bookings</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-completed">—</div>
+          <div class="stat-label">Trips Completed</div>
+        </div>
+      </div>
+
+      <!-- SPECIAL EVENT CONTROL -->
+      <div class="card">
+        <div class="card-title">🎉 Special Event Control</div>
+
+        <div class="event-toggle-row">
+          <div>
+            <div class="event-toggle-label">Special Event Mode</div>
+            <div class="event-toggle-sub">
+              Activating this increases predicted wait times
+            </div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="event-toggle"
+                   onchange="onEventToggle()" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Severity selector — only visible when toggled on -->
+        <div id="severity-section" style="display:none;">
+          <div style="font-size:13px;color:#555;margin-bottom:8px;font-weight:bold;">
+            Event Severity
+          </div>
+          <div class="severity-row">
+            <button class="severity-btn active-normal" id="sev-normal"
+                    onclick="setSeverity('normal', 0.0)">
+              ✅ Normal<br>
+              <span style="font-weight:normal;font-size:10px;">factor: 0.0</span>
+            </button>
+            <button class="severity-btn" id="sev-exams"
+                    onclick="setSeverity('exams', 0.5)">
+              📝 Exams<br>
+              <span style="font-weight:normal;font-size:10px;">factor: 0.5</span>
+            </button>
+            <button class="severity-btn" id="sev-convocation"
+                    onclick="setSeverity('convocation', 1.0)">
+              🎓 Convoc.<br>
+              <span style="font-weight:normal;font-size:10px;">factor: 1.0</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Live PWT Preview -->
+        <div class="pwt-preview">
+          <span class="pwt-label">📊 Current Queue Pressure:</span>
+          <span class="pwt-value" id="pwt-preview">Calculating...</span>
+        </div>
+
+        <button class="save-btn" id="save-btn" onclick="saveEventConfig()">
+          💾 Save & Apply to All Students
+        </button>
+        <div class="save-success" id="save-success">
+          ✅ Saved! All students see updated wait times.
+        </div>
+      </div>
+
+      <!-- BUS MANAGEMENT -->
+      <div class="card">
+        <div class="card-title">🚌 Bus Management</div>
+        <div id="bus-list">
+          <div style="color:#888;font-size:14px;">Loading buses...</div>
+        </div>
+      </div>
+
+      <!-- RESERVATION STATS -->
+      <div class="card">
+        <div class="card-title">🎟️ Today's Reservation Stats</div>
+        <div class="res-row">
+          <span class="res-label">Booked (waiting to board)</span>
+          <span class="res-value" id="res-booked">—</span>
+        </div>
+        <div class="res-row">
+          <span class="res-label">Completed (boarded)</span>
+          <span class="res-value" id="res-completed">—</span>
+        </div>
+        <div class="res-row">
+          <span class="res-label">Cancelled</span>
+          <span class="res-value" id="res-cancelled">—</span>
+        </div>
+        <div class="res-row">
+          <span class="res-label">Total reservations today</span>
+          <span class="res-value" id="res-total">—</span>
+        </div>
+      </div>
+
+    </div><!-- /dashboard -->
+  </div><!-- /content -->
+</div><!-- /admin-content -->
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// FIREBASE
+// ════════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey:            "AIzaSyDRmrKcsfFzy0oiWDhn5vBBLW-V2-gWMZ4",
+  authDomain:        "smart-campus-shuttle-tracker.firebaseapp.com",
+  projectId:         "smart-campus-shuttle-tracker",
+  storageBucket:     "smart-campus-shuttle-tracker.firebasestorage.app",
+  messagingSenderId: "738720823079",
+  appId:             "1:738720823079:web:f5c504cfb7054a7ad29b02"
+};
+firebase.initializeApp(firebaseConfig);
+var db = firebase.firestore();
+
+// ════════════════════════════════════════════════════════════
+// PIN LOGIC
+// ════════════════════════════════════════════════════════════
+var CORRECT_PIN = '2002'; // ← change this line to update PIN
+var enteredPin  = '';
+
+function pinKey(digit) {
+  if (enteredPin.length >= 4) return;
+  enteredPin += digit;
+  updateDots();
+  if (enteredPin.length === 4) {
+    setTimeout(checkPin, 200);
+  }
+}
+
+function pinDelete() {
+  enteredPin = enteredPin.slice(0, -1);
+  updateDots(false);
+  document.getElementById('pin-error').textContent = '';
+}
+
+function updateDots(error) {
+  for (var i = 0; i < 4; i++) {
+    var dot = document.getElementById('dot-' + i);
+    dot.className = 'pin-dot';
+    if (error)            dot.classList.add('error');
+    else if (i < enteredPin.length) dot.classList.add('filled');
+  }
+}
+
+function checkPin() {
+  if (enteredPin === CORRECT_PIN) {
+    document.getElementById('pin-screen').style.display   = 'none';
+    document.getElementById('admin-content').style.display = 'block';
+    initDashboard();
+  } else {
+    updateDots(true);
+    document.getElementById('pin-error').textContent = 'Incorrect PIN. Try again.';
+    setTimeout(function() {
+      enteredPin = '';
+      updateDots(false);
+      document.getElementById('pin-error').textContent = '';
+    }, 1200);
+  }
+}
+
+function logout() {
+  enteredPin = '';
+  updateDots(false);
+  document.getElementById('admin-content').style.display = 'none';
+  document.getElementById('pin-screen').style.display    = 'flex';
+}
+
+// ════════════════════════════════════════════════════════════
+// DASHBOARD STATE
+// ════════════════════════════════════════════════════════════
+var campusDocRef    = null;
+var campusDocId     = null;
+var currentSEFactor = 0.0;
+var currentSEActive = false;
+var activeBusCount  = 0;
+var fleetAvgSeats   = 12;
+var campusBaseHW    = 15;
+
+// ════════════════════════════════════════════════════════════
+// INIT DASHBOARD — load everything
+// ════════════════════════════════════════════════════════════
+function initDashboard() {
+  // Load campus config
+  db.collection('campuses')
+    .where('campus_id', '==', 'UNILORIN_MAIN')
+    .get()
+    .then(function(snap) {
+      if (!snap.empty) {
+        campusDocId  = snap.docs[0].id;
+        campusDocRef = db.collection('campuses').doc(campusDocId);
+        var d = snap.docs[0].data();
+        campusBaseHW    = d.base_headway        || 15;
+        currentSEActive = d.special_event_active || false;
+        currentSEFactor = d.special_event_factor || 0.0;
+        applyLoadedConfig();
+      }
+      document.getElementById('admin-loading').style.display = 'none';
+      document.getElementById('dashboard').style.display     = 'block';
+    });
+
+  // Live listeners
+  startBusListener();
+  loadReservationStats();
+}
+
+function applyLoadedConfig() {
+  // Set toggle
+  document.getElementById('event-toggle').checked = currentSEActive;
+  document.getElementById('severity-section').style.display =
+    currentSEActive ? 'block' : 'none';
+
+  // Set severity button highlight
+  highlightSeverity();
+  updatePWTPreview();
+}
+
+// ════════════════════════════════════════════════════════════
+// BUS LIVE LISTENER
+// ════════════════════════════════════════════════════════════
+function startBusListener() {
+  db.collection('buses').onSnapshot(function(snapshot) {
+    var active = 0, totalSeats = 0;
+    var busHTML = '';
+
+    snapshot.docs.forEach(function(doc) {
+      var d      = doc.data();
+      var seats  = d.available_seats || 0;
+      var maxCap = d.max_capacity    || 12;
+      var status = d.status          || 'Offline';
+      var isActive = status === 'Active';
+
+      if (isActive) {
+        active++;
+        totalSeats += seats;
+      }
+
+      var statusColor = isActive ? '#4CAF50' : '#9E9E9E';
+      var dir = d.direction === 'to_school' ? '→ School' :
+                d.direction === 'to_gate'   ? '← Gate'   : '—';
+
+      busHTML +=
+        '<div class="bus-row">' +
+          '<div class="bus-row-left">' +
+            '<div class="bus-row-name">' +
+              (d.bus_type === 'Tricycle' ? '🛺' : '🚌') +
+              ' ' + (d.bus_type || 'Bus') +
+              ' <span style="font-size:12px;color:#888;">(' + (d.driver_name||'No driver') + ')</span>' +
+            '</div>' +
+            '<div class="bus-row-detail">' +
+              seats + '/' + maxCap + ' seats • ' + dir +
+            '</div>' +
+          '</div>' +
+          '<div class="bus-row-right">' +
+            '<span class="status-pill" style="background:'+statusColor+'">'+status+'</span>' +
+            '<button class="toggle-status-btn" onclick="toggleBusStatus(\''+doc.id+'\',\''+status+'\')">' +
+              (isActive ? 'Set Offline' : 'Set Active') +
+            '</button>' +
+          '</div>' +
+        '</div>';
+    });
+
+    // Update stats
+    activeBusCount = active;
+    fleetAvgSeats  = active > 0 ? Math.round(totalSeats / active) : 12;
+
+    document.getElementById('stat-active-buses').textContent = active;
+    document.getElementById('stat-total-seats').textContent  = totalSeats;
+    document.getElementById('bus-list').innerHTML = busHTML ||
+      '<div style="color:#888;font-size:14px;">No buses found.</div>';
+
+    updatePWTPreview();
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// TOGGLE BUS STATUS (admin override)
+// ════════════════════════════════════════════════════════════
+function toggleBusStatus(docId, currentStatus) {
+  var newStatus = currentStatus === 'Active' ? 'Offline' : 'Active';
+  db.collection('buses').doc(docId).update({ status: newStatus })
+    .catch(function(e) { alert('Failed: ' + e.message); });
+}
+
+// ════════════════════════════════════════════════════════════
+// RESERVATION STATS
+// ════════════════════════════════════════════════════════════
+function loadReservationStats() {
+  // Listen to all reservations in real time
+  db.collection('reservations').onSnapshot(function(snap) {
+    var booked = 0, completed = 0, cancelled = 0;
+
+    snap.docs.forEach(function(doc) {
+      var s = doc.data().status || '';
+      if      (s === 'Booked')    booked++;
+      else if (s === 'Completed') completed++;
+      else if (s === 'Cancelled') cancelled++;
+    });
+
+    document.getElementById('stat-bookings').textContent  = booked;
+    document.getElementById('stat-completed').textContent = completed;
+    document.getElementById('res-booked').textContent     = booked;
+    document.getElementById('res-completed').textContent  = completed;
+    document.getElementById('res-cancelled').textContent  = cancelled;
+    document.getElementById('res-total').textContent      = snap.size;
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// SPECIAL EVENT TOGGLE
+// ════════════════════════════════════════════════════════════
+function onEventToggle() {
+  currentSEActive = document.getElementById('event-toggle').checked;
+  document.getElementById('severity-section').style.display =
+    currentSEActive ? 'block' : 'none';
+
+  if (!currentSEActive) {
+    currentSEFactor = 0.0;
+    highlightSeverity();
+  }
+  updatePWTPreview();
+}
+
+var currentSeverityKey = 'normal';
+
+function setSeverity(key, factor) {
+  currentSeverityKey = key;
+  currentSEFactor    = factor;
+  highlightSeverity();
+  updatePWTPreview();
+}
+
+function highlightSeverity() {
+  var keys = ['normal', 'exams', 'convocation'];
+  keys.forEach(function(k) {
+    var btn = document.getElementById('sev-' + k);
+    btn.className = 'severity-btn' +
+      (currentSeverityKey === k ? ' active-' + k : '');
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// PWT PREVIEW — live calculation
+// ════════════════════════════════════════════════════════════
+function updatePWTPreview() {
+  var t  = new Date().getHours() + new Date().getMinutes() / 60;
+  var pf = t>=6.5&&t<=10?2.0 : t>=13.5&&t<=16.5?1.8 : t>=17&&t<=19?1.3 : 1.0;
+  var ts = (t>=7.75&&t<=8.25)||(t>=9.75&&t<=10.25)||
+           (t>=11.75&&t<=12.25)||(t>=13.75&&t<=14.25)||
+           (t>=15.75&&t<=16.25) ? 0.5 : pf>=1.8 ? 0.3 : 0.0;
+
+  var se = currentSEActive ? currentSEFactor : 0.0;
+  var bh = campusBaseHW || 15;
+
+  if (activeBusCount <= 0 || fleetAvgSeats <= 0) {
+    document.getElementById('pwt-preview').textContent = 'No buses online';
+    return;
+  }
+
+  var pwt  = (bh * pf * (1 + ts + 0.35 + se + 0)) / (activeBusCount * fleetAvgSeats);
+  var mins = Math.round(pwt);
+
+  var result;
+  if (pwt < 1)   result = '🟢 Low — under 1 min queue';
+  else if (mins <= 10) result = '🟢 Low (~' + mins + ' min queue)';
+  else if (mins <= 25) result = '🟡 Moderate (~' + mins + ' min queue)';
+  else if (pwt > 120)  result = '🔴 Very high queue';
+  else                 result = '🔴 High (~' + mins + ' min queue)';
+
+  document.getElementById('pwt-preview').textContent = result;
+}
+
+// Refresh preview every 30 seconds (peak factor changes with time)
+setInterval(updatePWTPreview, 30000);
+
+// ════════════════════════════════════════════════════════════
+// SAVE EVENT CONFIG TO FIRESTORE
+// Instantly updates every student's map
+// ════════════════════════════════════════════════════════════
+function saveEventConfig() {
+  if (!campusDocRef) {
+    alert('Campus document not loaded. Please refresh.');
+    return;
+  }
+
+  var btn = document.getElementById('save-btn');
+  btn.textContent = '⏳ Saving...';
+  btn.classList.add('saving');
+  btn.disabled = true;
+
+  var se = currentSEActive ? currentSEFactor : 0.0;
+
+  campusDocRef.update({
+    special_event_active:  currentSEActive,
+    special_event_factor:  se
+  }).then(function() {
+    btn.textContent = '💾 Save & Apply to All Students';
+    btn.classList.remove('saving');
+    btn.disabled = false;
+
+    var success = document.getElementById('save-success');
+    success.style.display = 'block';
+    setTimeout(function() {
+      success.style.display = 'none';
+    }, 3000);
+
+    updatePWTPreview();
+  }).catch(function(err) {
+    btn.textContent = '💾 Save & Apply to All Students';
+    btn.classList.remove('saving');
+    btn.disabled = false;
+    alert('Save failed: ' + err.message);
+  });
+}
+</script>
+</body>
+</html>
