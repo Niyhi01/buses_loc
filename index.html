@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Smart Shuttle UNILORIN</title>
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/bus-map/manifest.json" />
+  <meta name="theme-color" content="#1B3A6B" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SmartShuttle" />
+  <link rel="apple-touch-icon" href="/bus-map/icon-192.png" />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; }
+
+    #map { width: 100vw; height: 100vh; }
+
+    #no-buses-banner {
+      display: none;
+      position: fixed;
+      top: 16px; left: 16px; right: 16px;
+      background: #e65100;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      z-index: 1000;
+      text-align: center;
+    }
+
+    #bus-card {
+      display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: white;
+      border-radius: 20px 20px 0 0;
+      padding: 20px;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+      z-index: 1000;
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0); }
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .bus-name {
+      font-size: 18px;
+      font-weight: bold;
+      color: #1B3A6B;
+    }
+
+    .close-btn {
+      background: #eee;
+      border: none;
+      border-radius: 50%;
+      width: 30px; height: 30px;
+      font-size: 16px;
+      cursor: pointer;
+      line-height: 30px;
+      text-align: center;
+    }
+
+    .driver-name {
+      color: #888;
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+
+    .seats-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .seats-label { font-size: 14px; color: #333; }
+
+    .seats-badge {
+      padding: 5px 14px;
+      border-radius: 20px;
+      color: white;
+      font-weight: bold;
+      font-size: 13px;
+    }
+
+    .wait-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+      color: #555;
+    }
+
+    .wait-time { font-weight: bold; font-size: 15px; }
+
+    #book-btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: bold;
+      color: white;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    #book-btn:active { opacity: 0.8; }
+
+    #loading {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px 30px;
+      border-radius: 12px;
+      font-size: 14px;
+      color: #333;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 2000;
+    }
+  </style>
+
+  <script>
+  // Register Service Worker for PWA install prompt
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/bus-map/sw.js')
+        .then(function(reg) { console.log('SW registered'); })
+        .catch(function(err){ console.log('SW failed:', err); });
+    });
+  }
+
+  // Show install prompt when browser fires it
+  var deferredPrompt;
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    // Show our custom install banner after 3 seconds
+    setTimeout(showInstallBanner, 3000);
+  });
+
+  function showInstallBanner() {
+    var banner = document.getElementById('install-banner');
+    if (banner && deferredPrompt) banner.style.display = 'flex';
+  }
+
+  function installApp() {
+    var banner = document.getElementById('install-banner');
+    if (banner) banner.style.display = 'none';
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(function() {
+        deferredPrompt = null;
+      });
+    }
+  }
+
+  function dismissBanner() {
+    var banner = document.getElementById('install-banner');
+    if (banner) banner.style.display = 'none';
+  }
+  </script>
+</head>
+
+<body>
+  <div id="loading">🔄 Loading map...</div>
+  <div id="map"></div>
+
+  <div id="no-buses-banner">
+    🚌 No buses online right now. Operating hours: 6:30AM – 8:00PM
+  </div>
+
+  <div id="bus-card">
+    <div class="card-header">
+      <span class="bus-name" id="card-bus-type">CNG Bus</span>
+      <button class="close-btn" onclick="closeCard()">✕</button>
+    </div>
+    <div class="driver-name" id="card-driver">Driver: —</div>
+
+    <div class="seats-row">
+      <span class="seats-label">Seats:</span>
+      <span class="seats-badge" id="card-seats-badge">12 / 12</span>
+    </div>
+
+    <div class="wait-row">
+      ⏱️ Est. Wait:
+      <span class="wait-time" id="card-wait-time">Calculating...</span>
+    </div>
+
+    <button id="book-btn" onclick="bookSeat()">🎟️ Book a Seat</button>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!--
+    Firebase CDN COMPAT versions — these load firebase as a global variable.
+    This is the CORRECT way for plain HTML files. NOT the import/ES module way.
+  -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    // ══════════════════════════════════════════════════════════
+    // YOUR FIREBASE CONFIG — already filled in correctly below
+    // DO NOT add any "import" statements — this is a plain HTML
+    // file, not a Node.js app. The compat CDN scripts above handle
+    // everything automatically.
+    // ══════════════════════════════════════════════════════════
+    const firebaseConfig = {
+      apiKey:            "AIzaSyDRmrKcsfFzy0oiWDhn5vBBLW-V2-gWMZ4",
+      authDomain:        "smart-campus-shuttle-tracker.firebaseapp.com",
+      projectId:         "smart-campus-shuttle-tracker",
+      storageBucket:     "smart-campus-shuttle-tracker.firebasestorage.app",
+      messagingSenderId: "738720823079",
+      appId:             "1:738720823079:web:f5c504cfb7054a7ad29b02"
+    };
+    // Note: measurementId removed — Analytics not needed here
+
+    // Initialise Firebase using the COMPAT global (loaded by CDN above)
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // ══════════════════════════════════════════════════════════
+    // INITIALISE MAP — centred on UNILORIN
+    // ══════════════════════════════════════════════════════════
+    const UNILORIN_LAT = 8.4799;
+    const UNILORIN_LNG = 4.5418;
+
+    const map = L.map('map', {
+      center: [UNILORIN_LAT, UNILORIN_LNG],
+      zoom: 16,
+      zoomControl: true
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(map);
+
+    // Hide loading indicator when map is ready
+    map.whenReady(() => {
+      document.getElementById('loading').style.display = 'none';
+    });
+
+    // ══════════════════════════════════════════════════════════
+    // MARKER STORE & SELECTED BUS STATE
+    // ══════════════════════════════════════════════════════════
+    const busMarkers = {};
+    let selectedBus   = null;
+
+    function getBusIcon(busType, seats) {
+      const color = seats > 0 ? '#4CAF50' : '#F44336';
+      const emoji = busType === 'Tricycle' ? '🛺' : '🚌';
+      return L.divIcon({
+        html: `
+          <div style="
+            background:${color};border-radius:50% 50% 50% 0;
+            transform:rotate(-45deg);width:36px;height:36px;
+            border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.3);
+            display:flex;align-items:center;justify-content:center;">
+            <span style="transform:rotate(45deg);font-size:16px;">${emoji}</span>
+          </div>
+          <div style="
+            background:${color};color:white;border-radius:10px;
+            padding:2px 6px;font-size:10px;font-weight:bold;
+            text-align:center;margin-top:2px;white-space:nowrap;">
+            ${seats > 0 ? seats + ' seats' : 'FULL'}
+          </div>`,
+        className: '',
+        iconSize:   [44, 56],
+        iconAnchor: [22, 56]
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // PWT EQUATION (from your seminar report)
+    // ══════════════════════════════════════════════════════════
+    function calculatePWT(activeBusCount, avgSeats, specialEventFactor, baseHeadway) {
+      const now  = new Date();
+      const time = now.getHours() + now.getMinutes() / 60;
+
+      let pf;
+      if      (time >= 6.5  && time <= 10.0) pf = 2.0;
+      else if (time >= 13.5 && time <= 16.5) pf = 1.8;
+      else if (time >= 17.0 && time <= 19.0) pf = 1.3;
+      else pf = 1.0;
+
+      let ts;
+      if ((time >= 7.75  && time <= 8.25)  ||
+          (time >= 9.75  && time <= 10.25) ||
+          (time >= 11.75 && time <= 12.25) ||
+          (time >= 13.75 && time <= 14.25) ||
+          (time >= 15.75 && time <= 16.25)) { ts = 0.5; }
+      else if (pf >= 1.8) { ts = 0.3; }
+      else                { ts = 0.0; }
+
+      const um = 0.35;
+      const af = 0.0;
+      const bh = baseHeadway        || 15;
+      const se = specialEventFactor || 0.0;
+
+      if (activeBusCount <= 0 || avgSeats <= 0) return '—';
+
+      const pwt = (bh * pf * (1 + ts + um + se + af)) / (activeBusCount * avgSeats);
+
+      if (pwt < 1)   return '🟢 Under 1 min';
+      if (pwt > 120) return '🔴 Over 2 hrs';
+      const mins = Math.round(pwt);
+      return (mins <= 10 ? '🟢' : mins <= 25 ? '🟡' : '🔴') + ' ~' + mins + ' mins';
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // CAMPUS CONFIG — load once at startup
+    // ══════════════════════════════════════════════════════════
+    let campusConfig  = { base_headway: 15, special_event_factor: 0.0 };
+    let activeBusCount = 0;
+
+    db.collection('campuses')
+      .where('campus_id', '==', 'UNILORIN_MAIN')
+      .get()
+      .then(snap => {
+        if (!snap.empty) {
+          const d = snap.docs[0].data();
+          campusConfig.base_headway        = d.base_headway        || 15;
+          campusConfig.special_event_factor = d.special_event_factor || 0.0;
+        }
+      })
+      .catch(err => console.warn('Campus config load failed:', err));
+
+    // ══════════════════════════════════════════════════════════
+    // LIVE FIRESTORE LISTENER — real-time bus markers
+    // ══════════════════════════════════════════════════════════
+    db.collection('buses')
+      .where('status', '==', 'Active')
+      .onSnapshot(snapshot => {
+        activeBusCount = snapshot.docs.length;
+        const seenIds  = new Set();
+
+        snapshot.docs.forEach(doc => {
+          const d      = doc.data();
+          const docId  = doc.id;
+          const lat    = d.latitude        || 0;
+          const lng    = d.longitude       || 0;
+          const seats  = d.available_seats || 0;
+          const maxCap = d.max_capacity    || 12;
+          const type   = d.bus_type        || 'CNG Bus';
+          const driver = d.driver_name     || 'Unknown';
+          const busId  = d.bus_id          || docId;
+
+          seenIds.add(docId);
+
+          // Skip buses whose GPS hasn't started
+          if (lat === 0 && lng === 0) return;
+
+          const icon    = getBusIcon(type, seats);
+          const busData = { docId, busId, type, driver, seats, maxCap, lat, lng };
+
+          if (busMarkers[docId]) {
+            busMarkers[docId].setLatLng([lat, lng]);
+            busMarkers[docId].setIcon(icon);
+            busMarkers[docId]._busData = busData;
+          } else {
+            const marker = L.marker([lat, lng], { icon }).addTo(map);
+            marker._busData = busData;
+            marker.on('click', function () { showCard(this._busData); });
+            busMarkers[docId] = marker;
+          }
+        });
+
+        // Remove offline buses
+        Object.keys(busMarkers).forEach(id => {
+          if (!seenIds.has(id)) {
+            map.removeLayer(busMarkers[id]);
+            delete busMarkers[id];
+          }
+        });
+
+        // Banner
+        document.getElementById('no-buses-banner').style.display =
+          activeBusCount === 0 ? 'block' : 'none';
+
+        // Refresh open card if bus data changed
+        if (selectedBus) {
+          const m = busMarkers[selectedBus.docId];
+          if (m) showCard(m._busData); else closeCard();
+        }
+
+      }, err => {
+        console.error('Firestore listener error:', err);
+      });
+
+    // ══════════════════════════════════════════════════════════
+    // SHOW / CLOSE BUS INFO CARD
+    // ══════════════════════════════════════════════════════════
+    function showCard(busData) {
+      selectedBus = busData;
+
+      document.getElementById('card-bus-type').textContent = busData.type;
+      document.getElementById('card-driver').textContent   = 'Driver: ' + busData.driver;
+
+      const badge           = document.getElementById('card-seats-badge');
+      badge.textContent     = busData.seats + ' / ' + busData.maxCap + ' available';
+      badge.style.background = busData.seats > 0 ? '#4CAF50' : '#F44336';
+
+      document.getElementById('card-wait-time').textContent = calculatePWT(
+        activeBusCount,
+        busData.maxCap,
+        campusConfig.special_event_factor,
+        campusConfig.base_headway
+      );
+
+      const btn = document.getElementById('book-btn');
+      if (busData.seats > 0) {
+        btn.textContent      = '🎟️ Book a Seat';
+        btn.style.background = '#1B3A6B';
+        btn.disabled         = false;
+      } else {
+        btn.textContent      = 'Bus is Full';
+        btn.style.background = '#9E9E9E';
+        btn.disabled         = true;
+      }
+
+      document.getElementById('bus-card').style.display = 'block';
+    }
+
+    function closeCard() {
+      document.getElementById('bus-card').style.display = 'none';
+      selectedBus = null;
+    }
+
+    map.on('click', closeCard);
+
+    // ══════════════════════════════════════════════════════════
+    // BOOK SEAT — communicates with FlutterFlow WebView
+    // ══════════════════════════════════════════════════════════
+    function bookSeat() {
+      if (!selectedBus) return;
+      const message = JSON.stringify({
+        action:   'BOOK_SEAT',
+        busDocId: selectedBus.docId,
+        busType:  selectedBus.type,
+        seats:    selectedBus.seats
+      });
+      if (window.FlutterChannel && window.FlutterChannel.postMessage) {
+        window.FlutterChannel.postMessage(message);
+      } else {
+        window.location.hash = 'BOOK_SEAT:' + selectedBus.docId;
+      }
+    }
+  </script>
+</body>
+</html>
