@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
+  <link rel="manifest" href="/bus-map/manifest.json"/>
+  <meta name="theme-color" content="#1B3A6B"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <title>Driver Panel — Smart Shuttle</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Segoe UI',sans-serif;background:#F0F2F5;min-height:100vh;}
+
+    .header{
+      background:#1B3A6B;color:white;padding:14px 20px;
+      display:flex;align-items:center;justify-content:space-between;
+      position:sticky;top:0;z-index:100;
+    }
+    .header h1{font-size:16px;font-weight:bold;}
+    .trip-badge{padding:4px 12px;border-radius:20px;font-size:12px;font-weight:bold;}
+    .trip-badge.online{background:#4CAF50;}
+    .trip-badge.offline{background:rgba(255,255,255,.2);}
+
+    .content{padding:14px;max-width:480px;margin:0 auto;}
+
+    .card{
+      background:white;border-radius:14px;
+      padding:16px;margin-bottom:12px;
+      box-shadow:0 2px 8px rgba(0,0,0,.07);
+    }
+    .card-title{
+      font-size:11px;color:#888;text-transform:uppercase;
+      letter-spacing:.6px;margin-bottom:12px;font-weight:bold;
+    }
+
+    /* Status card */
+    .status-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+    .status-pill{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:bold;color:white;}
+
+    /* Trip status notice */
+    .trip-notice{
+      border-radius:10px;padding:12px 14px;
+      font-size:13px;font-weight:bold;
+    }
+    .trip-notice.stopped{background:#FFF3E0;color:#E65100;}
+    .trip-notice.active{background:#E8F5E9;color:#2E7D32;}
+    .gps-dot{
+      display:inline-block;width:9px;height:9px;border-radius:50%;
+      background:#4CAF50;margin-right:6px;
+      animation:pulse 1.5s infinite;
+    }
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+    /* Seat counter */
+    .seat-counter{
+      display:flex;align-items:center;
+      justify-content:center;gap:16px;margin:8px 0 6px;
+    }
+    .counter-btn{
+      width:54px;height:54px;border-radius:50%;border:none;
+      font-size:28px;font-weight:bold;cursor:pointer;
+      transition:transform .1s,opacity .2s;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .counter-btn:active{transform:scale(.9);}
+    .counter-btn:disabled{opacity:.3;cursor:default;}
+    .minus-btn{background:#FFEBEE;color:#C62828;}
+    .plus-btn{background:#E8F5E9;color:#2E7D32;}
+    .seat-number{
+      font-size:58px;font-weight:900;color:#1B3A6B;
+      line-height:1;min-width:70px;text-align:center;
+    }
+    .seat-fraction{text-align:center;color:#888;font-size:13px;margin-top:2px;}
+    .seat-hint{text-align:center;color:#bbb;font-size:11px;margin-top:6px;font-style:italic;}
+
+    /* Reset seats button */
+    .reset-btn{
+      width:100%;margin-top:10px;padding:9px;
+      border:1.5px solid #1B3A6B;border-radius:10px;
+      background:white;color:#1B3A6B;
+      font-size:13px;font-weight:bold;cursor:pointer;
+    }
+    .reset-btn:active{background:#E3F2FD;}
+
+    /* Code verifier */
+    .code-block{margin-bottom:10px;}
+    .code-block label{
+      display:block;font-size:12px;color:#888;
+      font-weight:bold;margin-bottom:6px;
+    }
+    .code-input{
+      display:block;width:100%;
+      padding:14px 10px;
+      border:2px solid #E0E0E0;border-radius:10px;
+      font-size:28px;font-weight:bold;letter-spacing:8px;
+      text-align:center;text-transform:uppercase;
+      outline:none;background:#FAFAFA;
+      transition:border-color .2s;
+      /* Prevent overflow on small screens */
+      min-width:0;
+    }
+    .code-input:focus{border-color:#1B3A6B;background:white;}
+    .verify-btn{
+      display:block;width:100%;
+      padding:14px;background:#1B3A6B;color:white;
+      border:none;border-radius:10px;
+      font-size:16px;font-weight:bold;
+      cursor:pointer;transition:opacity .2s;
+      margin-top:10px;
+    }
+    .verify-btn:disabled{opacity:.45;cursor:default;}
+    .verify-btn:active{opacity:.8;}
+
+    .result-box{
+      display:none;margin-top:10px;padding:13px 14px;
+      border-radius:10px;font-size:14px;font-weight:bold;
+    }
+    .result-box.ok{background:#E8F5E9;color:#1B5E20;border:1px solid #A5D6A7;}
+    .result-box.err{background:#FFEBEE;color:#B71C1C;border:1px solid #EF9A9A;}
+    .result-detail{font-size:12px;font-weight:normal;margin-top:3px;opacity:.8;}
+
+    /* Trip stats */
+    .stats-row{display:flex;gap:10px;}
+    .stat-box{
+      flex:1;background:#F5F5F5;border-radius:10px;
+      padding:12px;text-align:center;
+    }
+    .stat-num{font-size:28px;font-weight:900;color:#1B3A6B;}
+    .stat-lbl{font-size:11px;color:#888;margin-top:2px;}
+
+    #init-loading{text-align:center;padding:50px 20px;color:#888;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🚌 Driver Dashboard</h1>
+    <span class="trip-badge offline" id="trip-badge">OFFLINE</span>
+  </div>
+
+  <div class="content">
+    <!-- BUS SELECTOR — always visible at top -->
+    <div class="card">
+      <div class="card-title">1. Select Your Bus</div>
+      <select id="bus-select" style="
+        width:100%;padding:12px 14px;
+        border:2px solid #E0E0E0;border-radius:10px;
+        font-size:15px;color:#333;background:white;
+        outline:none;appearance:none;cursor:pointer;">
+        <option value="">Loading buses...</option>
+      </select>
+    </div>
+
+    <!-- DIRECTION — visible after bus selected -->
+    <div class="card" id="dir-card" style="display:none;">
+      <div class="card-title">2. Select Direction</div>
+      <div style="display:flex;gap:10px;">
+        <button id="dir-school" onclick="setDir('to_school')" style="
+          flex:1;padding:11px 8px;border:2px solid #E0E0E0;
+          border-radius:10px;font-size:13px;font-weight:bold;
+          background:white;color:#555;cursor:pointer;">
+          → To School Park
+        </button>
+        <button id="dir-gate" onclick="setDir('to_gate')" style="
+          flex:1;padding:11px 8px;border:2px solid #E0E0E0;
+          border-radius:10px;font-size:13px;font-weight:bold;
+          background:white;color:#555;cursor:pointer;">
+          ← To Gate Park
+        </button>
+      </div>
+    </div>
+
+    <div id="init-loading" style="display:none;">
+      <div style="font-size:36px;margin-bottom:10px;">⏳</div>
+      <p>Loading bus data...</p>
+    </div>
+
+    <div id="main-content" style="display:none;">
+
+      <!-- BUS STATUS -->
+      <div class="card">
+        <div class="card-title">Current Bus</div>
+        <div style="font-size:18px;font-weight:bold;color:#1B3A6B;" id="bus-display-name">—</div>
+        <div class="status-row">
+          <span class="status-pill" id="status-pill" style="background:#9E9E9E;">Offline</span>
+          <span class="status-pill" id="direction-pill" style="background:#757575;">No direction</span>
+        </div>
+      </div>
+
+      <!-- TRIP STATUS -->
+      <div class="card">
+        <div class="card-title">Trip Status</div>
+        <div class="trip-notice stopped" id="notice-stopped">
+          ⚠️ Trip not started — use Start Trip button in the main app
+        </div>
+        <div class="trip-notice active" id="notice-active" style="display:none;">
+          <span class="gps-dot"></span>GPS Active — trip is live
+        </div>
+      </div>
+
+      <!-- SEAT COUNTER -->
+      <div class="card">
+        <div class="card-title">Available Seats</div>
+        <div class="seat-counter">
+          <button class="counter-btn minus-btn" id="minus-btn" onclick="decrement()">−</button>
+          <div>
+            <div class="seat-number" id="seat-num">—</div>
+          </div>
+          <button class="counter-btn plus-btn" id="plus-btn" onclick="increment()">+</button>
+        </div>
+        <div class="seat-fraction" id="seat-frac">Select a bus first</div>
+        <div class="seat-hint">Use +/− for cash passengers who board without booking</div>
+        <button class="reset-btn" id="reset-btn" onclick="resetSeats()" disabled>
+          🔄 Reset to Max Capacity
+        </button>
+      </div>
+
+      <!-- TRIP STATS -->
+      <div class="card">
+        <div class="card-title">This Trip</div>
+        <div class="stats-row">
+          <div class="stat-box">
+            <div class="stat-num" id="stat-boarded">0</div>
+            <div class="stat-lbl">Boarded</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num" id="stat-cash">0</div>
+            <div class="stat-lbl">Cash Pax</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CODE VERIFIER -->
+      <div class="card">
+        <div class="card-title">Verify Passenger Booking Code</div>
+        <div class="code-block">
+          <label>Enter 4-character code from passenger's phone:</label>
+          <input type="text" class="code-input" id="code-input"
+                 maxlength="4" placeholder="CODE"
+                 oninput="onCodeInput(this)"
+                 autocomplete="off" autocorrect="off"
+                 autocapitalize="characters" spellcheck="false"/>
+        </div>
+        <button class="verify-btn" id="verify-btn"
+                onclick="verifyCode()" disabled>
+          ✓ Verify Passenger
+        </button>
+        <div class="result-box" id="result-box">
+          <div id="result-text"></div>
+          <div class="result-detail" id="result-detail"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script>
+  var firebaseConfig={
+    apiKey:"AIzaSyDRmrKcsfFzy0oiWDhn5vBBLW-V2-gWMZ4",
+    authDomain:"smart-campus-shuttle-tracker.firebaseapp.com",
+    projectId:"smart-campus-shuttle-tracker",
+    storageBucket:"smart-campus-shuttle-tracker.firebasestorage.app",
+    messagingSenderId:"738720823079",
+    appId:"1:738720823079:web:f5c504cfb7054a7ad29b02"
+  };
+  firebase.initializeApp(firebaseConfig);
+  var db=firebase.firestore();
+
+  // Read params from URL: driver.html?busId=bus_1&trip=active
+  var params=new URLSearchParams(window.location.search);
+  var busId=params.get('busId')||'';
+  var tripActive=params.get('trip')==='active';
+
+  var busListener=null;
+  var currentData=null;
+  var boardedCount=0;
+  var cashCount=0;
+  var prevSeats=null; // to detect seat decrements by booking
+
+  var selectedDir = '';
+
+  function init(){
+    // Load all buses into dropdown
+    db.collection('buses').get().then(function(snap){
+      var sel = document.getElementById('bus-select');
+      sel.innerHTML = '<option value="">— Select your bus —</option>';
+      snap.docs.forEach(function(doc){
+        var d = doc.data();
+        var opt = document.createElement('option');
+        opt.value = doc.id;
+        opt.textContent = (d.bus_type||'Bus') + ' — ' + (d.driver_name||doc.id);
+        // Pre-select if busId from URL
+        if(doc.id === busId) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      // If busId was in URL, auto-trigger selection
+      if(busId) onBusSelect();
+    }).catch(function(e){
+      document.getElementById('bus-select').innerHTML =
+        '<option value="">Error loading buses</option>';
+    });
+
+    sel_el = document.getElementById('bus-select');
+    sel_el.addEventListener('change', onBusSelect);
+  }
+
+  var sel_el = null;
+
+  function onBusSelect(){
+    var sel = document.getElementById('bus-select');
+    busId = sel.value;
+    if(!busId){
+      document.getElementById('dir-card').style.display='none';
+      document.getElementById('main-content').style.display='none';
+      return;
+    }
+    // Show direction selector
+    document.getElementById('dir-card').style.display='block';
+    // Start live listener on selected bus
+    startListener();
+    setTripUI(tripActive);
+  }
+
+  function setDir(dir){
+    selectedDir = dir;
+    var s = document.getElementById('dir-school');
+    var g = document.getElementById('dir-gate');
+    if(dir==='to_school'){
+      s.style.background='#1565C0';s.style.color='white';s.style.borderColor='#1565C0';
+      g.style.background='white';g.style.color='#555';g.style.borderColor='#E0E0E0';
+    } else {
+      g.style.background='#6A1B9A';g.style.color='white';g.style.borderColor='#6A1B9A';
+      s.style.background='white';s.style.color='#555';s.style.borderColor='#E0E0E0';
+    }
+    // Update Firestore so map shows correct direction
+    if(busId){
+      db.collection('buses').doc(busId).update({direction: dir})
+        .catch(function(){});
+    }
+  }
+
+  function startListener(){
+    if(busListener) busListener();
+    busListener=db.collection('buses').doc(busId)
+      .onSnapshot(function(doc){
+        document.getElementById('init-loading').style.display='none';
+        document.getElementById('main-content').style.display='block';
+        if(!doc.exists){return;}
+        currentData=doc.data();
+        renderBusInfo();
+      },function(e){
+        document.getElementById('init-loading').textContent='Error: '+e.message;
+      });
+  }
+
+  function renderBusInfo(){
+    var d=currentData;
+    var seats=d.available_seats!==undefined?d.available_seats:0;
+    var maxCap=d.max_capacity||12;
+    var dir=d.direction||'';
+    var status=d.status||'Offline';
+
+    document.getElementById('bus-display-name').textContent=
+      (d.bus_type||'Bus')+(d.driver_name?' ('+d.driver_name+')':'');
+
+    // Status pill
+    var sp=document.getElementById('status-pill');
+    sp.textContent=status;
+    sp.style.background=status==='Active'?'#2E7D32':
+                         status==='Full'?'#E65100':'#9E9E9E';
+
+    // Direction pill
+    var dp=document.getElementById('direction-pill');
+    if(dir==='to_school'){dp.textContent='→ To School Park';dp.style.background='#1565C0';}
+    else if(dir==='to_gate'){dp.textContent='← To Gate Park';dp.style.background='#6A1B9A';}
+    else{dp.textContent='Direction not set';dp.style.background='#757575';}
+
+    // Seat number — colour by urgency
+    var sn=document.getElementById('seat-num');
+    sn.textContent=seats;
+    sn.style.color=seats===0?'#C62828':seats<=3?'#E65100':'#1B3A6B';
+    document.getElementById('seat-frac').textContent=
+      seats+' / '+maxCap+' seats available';
+
+    // Detect boarding via booking (seat decreased by 1 automatically)
+    if(prevSeats!==null&&seats<prevSeats&&tripActive){
+      boardedCount+=(prevSeats-seats);
+      document.getElementById('stat-boarded').textContent=boardedCount;
+    }
+    prevSeats=seats;
+
+    // Button guards
+    var canChange=tripActive;
+    document.getElementById('minus-btn').disabled=!canChange||seats<=0;
+    document.getElementById('plus-btn').disabled=!canChange||seats>=maxCap;
+    document.getElementById('reset-btn').disabled=!canChange;
+  }
+
+  function setTripUI(active){
+    tripActive=active;
+    document.getElementById('notice-stopped').style.display=active?'none':'block';
+    document.getElementById('notice-active').style.display=active?'block':'none';
+    var badge=document.getElementById('trip-badge');
+    badge.textContent=active?'ONLINE':'OFFLINE';
+    badge.className='trip-badge '+(active?'online':'offline');
+    if(currentData) renderBusInfo();
+  }
+
+  // Reload page when FlutterFlow changes trip state via URL
+  // FlutterFlow opens driver.html?busId=bus_1&trip=active on start
+  // and driver.html?busId=bus_1&trip=stopped on stop
+  // We listen for page visibility to refresh URL params
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden){
+      var np=new URLSearchParams(window.location.search);
+      var newTrip=np.get('trip')==='active';
+      if(newTrip!==tripActive) setTripUI(newTrip);
+    }
+  });
+
+  // ── SEAT CONTROLS ─────────────────────────────────────────
+  function increment(){
+    if(!currentData||!busId)return;
+    var seats=currentData.available_seats||0;
+    var maxCap=currentData.max_capacity||12;
+    if(seats>=maxCap)return;
+    cashCount++;
+    document.getElementById('stat-cash').textContent=cashCount;
+    db.collection('buses').doc(busId).update({
+      available_seats:firebase.firestore.FieldValue.increment(1)
+    }).catch(function(e){alert('Failed: '+e.message);});
+  }
+
+  function decrement(){
+    if(!currentData||!busId)return;
+    var seats=currentData.available_seats||0;
+    if(seats<=0)return;
+    db.collection('buses').doc(busId).update({
+      available_seats:firebase.firestore.FieldValue.increment(-1)
+    }).catch(function(e){alert('Failed: '+e.message);});
+  }
+
+  function resetSeats(){
+    if(!currentData||!busId)return;
+    var maxCap=currentData.max_capacity||12;
+    if(!confirm('Reset seat count to '+maxCap+'? Only do this if the bus is empty.'))return;
+    db.collection('buses').doc(busId).update({available_seats:maxCap})
+      .catch(function(e){alert('Failed: '+e.message);});
+  }
+
+  // ── CODE VERIFIER ─────────────────────────────────────────
+  function onCodeInput(input){
+    input.value=input.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+    document.getElementById('verify-btn').disabled=input.value.length<4;
+    document.getElementById('result-box').style.display='none';
+  }
+
+  function verifyCode(){
+    var code=document.getElementById('code-input').value.trim().toUpperCase();
+    if(code.length!==4||!busId)return;
+    var btn=document.getElementById('verify-btn');
+    btn.disabled=true;btn.textContent='Checking...';
+
+    db.collection('reservations')
+      .where('booking_code','==',code)
+      .where('status','==','Booked')
+      .where('bus_document_id','==',busId)
+      .get()
+      .then(function(snap){
+        btn.disabled=false;btn.textContent='✓ Verify Passenger';
+        if(!snap.empty){
+          // Valid — mark completed
+          snap.docs[0].ref.update({status:'Completed'}).then(function(){
+            boardedCount++;
+            document.getElementById('stat-boarded').textContent=boardedCount;
+            showResult(true,'✅ Access Granted',
+              'Passenger may board. Ticket marked complete.');
+            // Auto-clear input and refocus for next passenger
+            setTimeout(function(){
+              document.getElementById('code-input').value='';
+              document.getElementById('verify-btn').disabled=true;
+              document.getElementById('result-box').style.display='none';
+              document.getElementById('code-input').focus();
+            },3000);
+          });
+          return;
+        }
+        // Not found with this bus — investigate
+        db.collection('reservations').where('booking_code','==',code).get()
+          .then(function(any){
+            if(any.empty){
+              showResult(false,'❌ Invalid Code',
+                'Code "'+code+'" was not found. Check for typos.');
+            }else{
+              var s=any.docs[0].data().status;
+              if(s==='Completed')
+                showResult(false,'⚠️ Already Used','This ticket was already scanned.');
+              else if(s==='Cancelled')
+                showResult(false,'⚠️ Cancelled','This booking was cancelled.');
+              else if(s==='Expired')
+                showResult(false,'⚠️ Expired','This booking expired.');
+              else
+                showResult(false,'❌ Wrong Bus',
+                  'Code is valid but for a different bus. Passenger should board the correct vehicle.');
+            }
+          });
+      }).catch(function(e){
+        btn.disabled=false;btn.textContent='✓ Verify Passenger';
+        showResult(false,'❌ Error',e.message);
+      });
+  }
+
+  function showResult(ok,text,detail){
+    var box=document.getElementById('result-box');
+    box.className='result-box '+(ok?'ok':'err');
+    document.getElementById('result-text').textContent=text;
+    document.getElementById('result-detail').textContent=detail||'';
+    box.style.display='block';
+    if(ok&&navigator.vibrate) navigator.vibrate([100,50,100]);
+  }
+
+  init();
+  </script>
+</body>
+</html>
